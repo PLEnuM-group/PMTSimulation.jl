@@ -3,6 +3,26 @@ uuid = "41f40801-0ef4-4c1e-8920-1ad3d0975ff3"
 authors = ["Christian Haack"]
 version = "0.1.0"
 
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DSP = "717857b8-e6f2-59f4-9121-6e50c889abd2"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
+Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+NonNegLeastSquares = "b7351bd1-99d9-5c5d-8786-f205a815c4d7"
+Optim = "429524aa-4258-5aef-a3af-852621145aeb"
+PhysicalConstants = "5ad8b20f-a522-5ce9-bfc9-ddf1d5bda6ab"
+PhysicsTools = "aacfb283-0df6-49c4-85a4-270b72c3b0a9"
+Pipe = "b98c9c47-44ae-5843-9183-064241ee97a0"
+PoissonRandom = "e409e4f3-bfea-5376-8464-e040bb5c01ab"
+Polynomials = "f27b6e38-b328-58d1-80ce-0feddd5e7a45"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Reexport = "189a3867-3050-52da-a836-e630ba90ab69"
+Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
 [compat]
 julia = "1.9"
 
