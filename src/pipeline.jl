@@ -40,7 +40,7 @@ function calc_gamma_shape_mean_fwhm(mean, target_fwhm)
 end
 
 
-@kwdef struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate,V<:UnivariateDistribution}
+struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate,V<:UnivariateDistribution}
     spe_template::S
     pulse_model::P
     pulse_model_filt::U
@@ -48,12 +48,14 @@ end
     sampling_freq::T # Ghz
     unf_pulse_res::T # ns
     adc_freq::T # Ghz
+    adc_bits::Int64
+    adc_dyn_range::Tuple{T, T}
     tt_dist::V
     lp_filter::ZeroPoleGain{:z,ComplexF64,ComplexF64,Float64}
 
 end
 
-function PMTConfig(st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, lp_cutoff::Real,
+function PMTConfig(;st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, adc_bits::Int, adc_dyn_range::Tuple, lp_cutoff::Real,
     tt_mean::Real, tt_fwhm::Real)
     mode = get_template_mode(pm)
 
@@ -69,23 +71,25 @@ function PMTConfig(st::SPEDistribution, pm::PulseTemplate, snr_db::Real, samplin
 
     noise_sigma = eval_at_mode / 10^(snr_db / 20)
 
-    PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, tt_dist, lp_filter)
+    PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, adc_bits, adc_dyn_range, tt_dist, lp_filter)
 end
 
 
 STD_PMT_CONFIG = PMTConfig(
-    ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
-    PDFPulseTemplate(
+    st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
+    pm=PDFPulseTemplate(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
     ),
-    20,
-    2.0,
-    0.1,
-    0.25,
-    0.125,
-    25, # TT mean
-    1.5 # TT FWHM
+    snr_db=20,
+    sampling_freq=2.0,
+    unf_pulse_res=0.1,
+    adc_freq=0.25,
+    adc_bits=12,
+    adc_dyn_range=(0., 20.),
+    lp_cutoff=0.125,
+    tt_mean=25, # TT mean
+    tt_fwhm=1.5 # TT FWHM
 )
 
 function resample_simulation(hit_times, total_weights, downsample=1.0)

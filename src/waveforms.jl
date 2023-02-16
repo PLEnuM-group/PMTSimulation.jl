@@ -57,6 +57,8 @@ function digitize_waveform(
     sampling_frequency::Real,
     digitizer_frequency::Real,
     filter;
+    yrange=(0, 100),
+    yres_bits=12,
 )
 
     if length(waveform) == 0
@@ -70,7 +72,15 @@ function digitize_waveform(
     new_interval = range(min_time, max_time, step=1 / digitizer_frequency)
     waveform_resampled = resample(waveform_filtered, resampling_rate)
 
-    return Waveform(collect(new_interval), waveform_resampled)
+     # Discretize
+     # TODO check if there are 2^yres_bits or 2^yres_bits -1 bins
+     n_bins = 2^yres_bits
+     adc_bins = LinRange(yrange[1], yrange[2], n_bins)
+     bin_ix = searchsortedfirst.(Ref(adc_bins), waveform_resampled)
+     bin_ix[bin_ix .> n_bins] .= n_bins
+     waveform_discretized = adc_bins[bin_ix]
+
+    return Waveform(collect(new_interval), waveform_discretized)
 end
 
 function digitize_waveform(
@@ -78,10 +88,12 @@ function digitize_waveform(
     sampling_frequency::Real,
     digitizer_frequency::Real,
     noise_amp::Real,
-    filter; time_range=(-50.0, 150.0)
+    filter; time_range=(-50.0, 150.0),
+    yrange=(0, 100),
+    yres_bits=12
 )
     wf = make_waveform(ps, sampling_frequency, noise_amp; time_range=time_range)
-    digitize_waveform(wf, sampling_frequency, digitizer_frequency, filter)
+    digitize_waveform(wf, sampling_frequency, digitizer_frequency, filter; yrange=yrange, yres_bits=yres_bits)
 end
 
 

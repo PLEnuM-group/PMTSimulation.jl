@@ -6,27 +6,28 @@ using StaticArrays
 using DSP
 using Profile
 using DataFrames
-using BenchmarkTools
-using StatsPlots
 import Pipe: @pipe
 using PoissonRandom
 using Format
 
 pmt_config = PMTConfig(
-    ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
-    PDFPulseTemplate(
+    st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
+    pm=PDFPulseTemplate(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
     ),
-    30,
-    2.0,
-    0.1,
-    0.25,
-    0.125,
-    25, # TT mean
-    1.5 # TT FWHM
+    snr_db=30,
+    sampling_freq=2.0,
+    unf_pulse_res=0.1,
+    adc_freq=0.25,
+    adc_bits=12,
+    adc_dyn_range=(0., 20.),
+    lp_cutoff=0.125,
+    tt_mean=25, # TT mean
+    tt_fwhm=1.5 # TT FWHM
 )
 
+pmt_config.adc_bits
 
 spe_d = make_spe_dist(pmt_config.spe_template)
 lines(0:0.01:5, x -> pdf(spe_d, x),
@@ -43,7 +44,7 @@ save(joinpath(@__DIR__, "../figures/pulse_shape.png"), fig)
 
 
 pulse_times = sort(rand(Uniform(0, 5), 6))
-pulse_charges = 1:1.0:6
+pulse_charges = [1, 5, 10, 20, 50, 100]
 fig = Figure()
 for (i, (t, c)) in enumerate(zip(pulse_times, pulse_charges))
     row, col = divrem(i - 1, 3)
@@ -51,7 +52,7 @@ for (i, (t, c)) in enumerate(zip(pulse_times, pulse_charges))
     ax = Axis(fig[row+1, col+1], ylabel="Amplitude (a.u.)", xlabel="Time (ns)", title=format("t={:.2f} ns, c= {:.2f} (PE)", t, c))
     pulses = PulseSeries([t], [c], pmt_config.pulse_model)
     waveform = make_waveform(pulses, pmt_config.sampling_freq, pmt_config.noise_amp)
-    digi_wv = digitize_waveform(waveform, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.lp_filter)
+    digi_wv = digitize_waveform(waveform, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.lp_filter, yrange=(0, 100))
 
     lines!(waveform.timestamps, waveform.values, label="Unfiltered")
     lines!(ax, digi_wv.timestamps, digi_wv.values, label="Digitized")
@@ -61,8 +62,8 @@ end
 fig
 save(joinpath(@__DIR__, "../figures/pulses_with_digi.png"), fig)
 
-pulses = PulseSeries([rand()], [1.0], pmt_config.pulse_model)
-digi_wv = digitize_waveform(pulses, pmt_config.sampling_freq, pmt_config.adc_freq, 0.01, pmt_config.lp_filter)
+pulses = PulseSeries([rand()], [5.0], pmt_config.pulse_model)
+digi_wv = digitize_waveform(pulses, pmt_config.sampling_freq, pmt_config.adc_freq, 0.01, pmt_config.lp_filter; yrange=pmt_config.adc_dyn_range, yres_bits=pmt_config.adc_bits)
 unfolded_pulses = unfold_waveform(digi_wv, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.2, :nnls)
 
 
