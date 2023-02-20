@@ -48,9 +48,9 @@ abstract type PulseTemplate end
 """
 Abstract type for pulse templates that use a PDF to define the pulse shape
 """
-@kwdef struct PDFPulseTemplate{U<:UnivariateDistribution} <: PulseTemplate
+@kwdef struct PDFPulseTemplate{U<:UnivariateDistribution,A} <: PulseTemplate
     dist::U
-    amplitude::Float64
+    amplitude::A
 end
 
 get_template_mode(::PulseTemplate) = error("Not implemented")
@@ -60,9 +60,9 @@ get_template_mode(p::PDFPulseTemplate{<:Distributions.Truncated}) = mode(p.dist.
 """
 Pulse template using an interpolation to define its shape
 """
-@kwdef struct InterpolatedPulse <: PulseTemplate
+@kwdef struct InterpolatedPulse{A} <: PulseTemplate
     interp
-    amplitude::Float64
+    amplitude::A
 end
 
 

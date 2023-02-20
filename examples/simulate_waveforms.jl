@@ -9,25 +9,28 @@ using DataFrames
 import Pipe: @pipe
 using PoissonRandom
 using Format
+using Unitful
+using PhysicalConstants.CODATA2018
+
+ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
+
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
     pm=PDFPulseTemplate(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
-        amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
+        amplitude=10.0 # mV
     ),
     snr_db=30,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
     adc_freq=0.25,
     adc_bits=12,
-    adc_dyn_range=(0., 20.),
+    adc_dyn_range=(0.0, 100.0), #mV
     lp_cutoff=0.125,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
-
-pmt_config.adc_bits
 
 spe_d = make_spe_dist(pmt_config.spe_template)
 lines(0:0.01:5, x -> pdf(spe_d, x),
@@ -44,7 +47,7 @@ save(joinpath(@__DIR__, "../figures/pulse_shape.png"), fig)
 
 
 pulse_times = sort(rand(Uniform(0, 5), 6))
-pulse_charges = [1, 5, 10, 20, 50, 100]
+pulse_charges = [0.1, 0.3, 1, 5, 50, 100]
 fig = Figure()
 for (i, (t, c)) in enumerate(zip(pulse_times, pulse_charges))
     row, col = divrem(i - 1, 3)
@@ -84,22 +87,31 @@ fig
 save(joinpath(@__DIR__, "../figures/pulses_unfolding.png"), fig)
 
 
-pulse_times = rand(Uniform(0, 10), 1000)
-#pulse_times = rand(Uniform(0, 10), 1000)
-reco_dt = []
-dcharge = []
-c = 1
-for t in pulse_times
-    ps = PulseSeries([t], [c], pmt_config.pulse_model)
-    digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, 0.01, pmt_config.lp_filter, time_range=[-10, 20])
-    unfolded = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
-    if length(unfolded) > 0
-        amax = sortperm(unfolded.charges)[end]
-
-        push!(reco_dt, unfolded.times[amax] - t)
-        push!(dcharge, (sum(unfolded.charges) - c))
+pulse_charges = 10 .^ (-1:0.1:2)
+data_unf_res = []
+for c in pulse_charges
+    pulse_times = rand(Uniform(0, 10), 5000)
+    for t in pulse_times
+        ps = PulseSeries([t], [c], pmt_config.pulse_model)
+        digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, 0.01, pmt_config.lp_filter, time_range=[-10, 20])
+        unfolded = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
+        if length(unfolded) > 0
+            amax = sortperm(unfolded.charges)[end]
+            push!(data_unf_res, (charge=c, time=t, reco_time=unfolded.times[amax], reco_charge=sum(unfolded.charges)))
+        end
     end
 end
+data_unf_res = DataFrame(data_unf_res)
+data_unf_res[:, :dt] = data_unf_res[:, :reco_time] - data_unf_res[:, :time]
+
+data_unf_res
+
+time_res = combine(groupby(data_unf_res, :charge), :dt => mean, :dt => std)
+lines(time_res[:, :charge], time_res[:, :dt_std])
+
+grpd = groupby(data_unf_res, :charge)
+hist(grpd[end-5][:, :dt])
+
 
 fig = hist(reco_dt, bins=-3:0.05:3, axis=(; xlabel="Reco time - pulse time (ns)"))
 save(joinpath(@__DIR__, "../figures/spe_time_res.png"), fig)
