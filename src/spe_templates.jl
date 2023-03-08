@@ -101,7 +101,7 @@ end
 
 
 
-
+#=
 """
 Exponentially modified Normal SPE Distribution
 """
@@ -126,7 +126,7 @@ peak_to_valley(::SPEDistribution) = error("Not implemented")
 Return a `Distribution`
 """
 make_spe_dist(d::SPEDistribution{T}) where {T} = error("not implemented")
-
+=#
 
 
 
