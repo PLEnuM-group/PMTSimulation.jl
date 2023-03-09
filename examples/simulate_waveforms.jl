@@ -15,16 +15,10 @@ using Roots
 
 ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
 
-function fopt(s)
-    a = Normal(0, s)
-    r = 138219.16259063018 / 9996.856783934556
-    return pdf(a, 0) / pdf(a, 1) - r
-end
-
 
 find_zero(fopt, (0, 1), Bisection())
 
-SN = 10 * log10(7^2 / 0.4^2)
+SN = 10 * log10(7^2 / 0.5^2)
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
@@ -32,7 +26,7 @@ pmt_config = PMTConfig(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=7.0 # mV
     ),
-    snr_db=25,
+    snr_db=24.9,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
     adc_freq=0.2,
@@ -42,6 +36,9 @@ pmt_config = PMTConfig(
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
+
+
+gumbel_width_from_fwhm(6.0)
 
 spe_d = make_spe_dist(pmt_config.spe_template)
 lines(0:0.01:5, x -> pdf(spe_d, x),
@@ -118,7 +115,7 @@ data_unf_res[:, :dt] = data_unf_res[:, :reco_time] - data_unf_res[:, :time]
 data_unf_res
 
 time_res = combine(groupby(data_unf_res, :charge), :dt => mean, :dt => std)
-lines(time_res[:, :charge], time_res[:, :dt_std], axis=(;xscale=log10))
+lines(time_res[:, :charge], time_res[:, :dt_std], axis=(; xscale=log10))
 
 grpd = groupby(data_unf_res, :charge)
 hist(grpd[end-5][:, :dt])
