@@ -59,6 +59,7 @@ function PMTConfig(; st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampl
     mode = get_template_mode(pm)
 
     eval_at_mode = evaluate_pulse_template(pm, 0, mode)
+    
 
     designmethod = Butterworth(1)
     lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
