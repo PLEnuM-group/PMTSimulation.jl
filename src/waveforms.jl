@@ -7,6 +7,7 @@ using CairoMakie
 using DSP
 export Waveform
 export add_gaussian_white_noise, digitize_waveform, unfold_waveform, plot_waveform, make_waveform
+export adc_bins
 
 struct Waveform{T<:Real,U<:AbstractVector{T},V<:AbstractVector{T}}
     timestamps::U
@@ -50,6 +51,13 @@ function make_waveform(ps::PulseSeries, sampling_freq::Real, noise_amp::Real; ti
 
     Waveform(timestamps, waveform_values_noise)
 end
+
+
+function adc_bins(yrange, bits)
+    n_bins = 2^bits
+    return adc_bins = LinRange(yrange[1], yrange[2], n_bins)
+end
+
 
 
 function digitize_waveform(

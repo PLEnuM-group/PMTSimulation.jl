@@ -7,6 +7,7 @@ using Interpolations
 using Base.Iterators
 using DataFrames
 using PhysicsTools
+using Base.Iterators
 import Base: @kwdef
 
 using ..SPETemplates
@@ -83,7 +84,9 @@ function evaluate_pulse_template(
 
     shifted_time = timestamp - pulse_time
 
-    return pdf(pulse_shape.dist, shifted_time) * pulse_shape.amplitude
+    val_at_mode = pdf(pulse_shape.dist, mode(pulse_shape.dist.untruncated))
+
+    return pdf(pulse_shape.dist, shifted_time) * pulse_shape.amplitude / val_at_mode
 end
 
 
@@ -154,7 +157,15 @@ function PulseSeries(df::AbstractDataFrame, spe_template::SPEDistribution, pulse
     PulseSeries(df[:, :time], spe_template, pulse_shape)
 end
 
+function Base.iterate(ps::PulseSeries)
+    it = zip(ps.times, ps.charges)
+    return iterate(it)
+end 
 
+function Base.iterate(ps::PulseSeries, state)
+    it = zip(ps.times, ps.charges)
+    return iterate(it, state)
+end 
 
 
 Base.length(ps::PulseSeries) = length(ps.times)
