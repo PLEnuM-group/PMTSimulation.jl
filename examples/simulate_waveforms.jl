@@ -13,12 +13,11 @@ using Unitful
 using PhysicalConstants.CODATA2018
 using Roots
 
+
 ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
 
+snr_db = 10 * log10(7^2 / 0.5^2)
 
-find_zero(fopt, (0, 1), Bisection())
-
-SN = 10 * log10(7^2 / 0.5^2)
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
@@ -26,7 +25,7 @@ pmt_config = PMTConfig(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=7.0 # mV
     ),
-    snr_db=24.9,
+    snr_db=snr_db,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
     adc_freq=0.2,
@@ -38,9 +37,26 @@ pmt_config = PMTConfig(
 )
 
 
-gumbel_width_from_fwhm(6.0)
 
 spe_d = make_spe_dist(pmt_config.spe_template)
+pulse_series = PulseSeries([0, 5, 10], [1, 5, 1], pmt_config.pulse_model)
+waveform = make_waveform(pulse_series, pmt_config.sampling_freq, pmt_config.noise_amp)
+digi_wg = digitize_waveform(
+    waveform,
+    pmt_config.sampling_freq,
+    pmt_config.adc_freq,
+    pmt_config.lp_filter,
+    yrange=pmt_config.adc_dyn_range,
+    yres_bits=pmt_config.adc_bits)
+
+fig, ax = lines(waveform.timestamps, waveform.values, axis=(; xlabel="Time (ns)", ylabel="Amplitude (mV)"), label="Raw Waveform")
+lines!(ax, digi_wg.timestamps, digi_wg.values, label="Digitized Waveform")
+bins = adc_bins(pmt_config.adc_dyn_range, pmt_config.adc_bits)
+
+hlines!(ax, bins[1:10], alpha=0.1)
+fig
+
+
 lines(0:0.01:5, x -> pdf(spe_d, x),
     axis=(; title="SPE Template", xlabel="Charge (PE)", ylabel="PDF"))
 
