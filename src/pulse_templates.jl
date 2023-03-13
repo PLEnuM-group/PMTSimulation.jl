@@ -8,7 +8,9 @@ using Base.Iterators
 using DataFrames
 using PhysicsTools
 using Base.Iterators
+using Optim
 import Base: @kwdef
+
 
 using ..SPETemplates
 
@@ -66,6 +68,10 @@ Pulse template using an interpolation to define its shape
     amplitude::A
 end
 
+function get_template_mode(p::InterpolatedPulse)
+    _func(x) = -evaluate_pulse_template(p, 0.0, x)
+    return Optim.minimizer(optimize(_func, -50.0, 50.0))
+end
 
 """
     evaluate_pulse_template(pulse_shape::PulseTemplate, pulse_time::T, timestamp::T)
@@ -160,12 +166,12 @@ end
 function Base.iterate(ps::PulseSeries)
     it = zip(ps.times, ps.charges)
     return iterate(it)
-end 
+end
 
 function Base.iterate(ps::PulseSeries, state)
     it = zip(ps.times, ps.charges)
     return iterate(it, state)
-end 
+end
 
 
 Base.length(ps::PulseSeries) = length(ps.times)

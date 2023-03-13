@@ -12,20 +12,25 @@ using Format
 using Unitful
 using PhysicalConstants.CODATA2018
 using Roots
-
+using Base.Iterators
+using Random
+using Interpolations
 
 ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
 
 snr_db = 10 * log10(7^2 / 0.5^2)
 
+fwhm = 6.0
+gumbel_scale = gumbel_width_from_fwhm(6)
+gumbel_loc = 10
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
     pm=PDFPulseTemplate(
-        dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
+        dist=Truncated(Gumbel(0, gumbel_scale) + gumbel_loc, 0, 30),
         amplitude=7.0 # mV
     ),
-    snr_db=snr_db,
+    snr_db=22.92,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
     adc_freq=0.2,
@@ -35,12 +40,36 @@ pmt_config = PMTConfig(
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
-
-
-
 spe_d = make_spe_dist(pmt_config.spe_template)
+
+
+pulse_charges = [0.1, 0.2, 0.3, 0.5, 1, 5, 10, 50, 100]
+dyn_ranges_end = (100.0, 1000.0, 3000.0) # mV
+data_unf_res = []
+for (dr_end, c) in product(dyn_ranges_end, pulse_charges)
+    pulse_times = rand(Uniform(0, 10), 100)
+    for t in pulse_times
+        ps = PulseSeries([t], [c], pmt_config.pulse_model)
+        digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, time_range=[-10, 50], yrange=(0.0, dr_end),)
+        unfolded = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.1, :nnls)
+        if length(unfolded) > 0
+            amax = sortperm(unfolded.charges)[end]
+            push!(data_unf_res, (dr_end=dr_end, charge=c, time=t, reco_time=unfolded.times[amax], reco_charge=sum(unfolded.charges)))
+        end
+    end
+end
+
+
+data_unf_res = DataFrame(data_unf_res)
+data_unf_res[:, :dt] = data_unf_res[:, :reco_time] - data_unf_res[:, :time]
+
+time_res = combine(groupby(data_unf_res, [:charge, :dr_end]), :dt => mean, :dt => std, :dt => iqr)
+
+
+
+
 pulse_series = PulseSeries([0, 5, 10], [1, 5, 1], pmt_config.pulse_model)
-waveform = make_waveform(pulse_series, pmt_config.sampling_freq, pmt_config.noise_amp)
+waveform = Waveform(pulse_series, pmt_config.sampling_freq, pmt_config.noise_amp)
 digi_wg = digitize_waveform(
     waveform,
     pmt_config.sampling_freq,
@@ -78,7 +107,7 @@ for (i, (t, c)) in enumerate(zip(pulse_times, pulse_charges))
     @show row, col
     ax = Axis(fig[row+1, col+1], ylabel="Amplitude (a.u.)", xlabel="Time (ns)", title=format("t={:.2f} ns, c= {:.2f} (PE)", t, c))
     pulses = PulseSeries([t], [c], pmt_config.pulse_model)
-    waveform = make_waveform(pulses, pmt_config.sampling_freq, pmt_config.noise_amp)
+    waveform = Waveform(pulses, pmt_config.sampling_freq, pmt_config.noise_amp)
     digi_wv = digitize_waveform(waveform, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.lp_filter, yrange=(0, 100))
 
     lines!(waveform.timestamps, waveform.values, label="Unfiltered")
