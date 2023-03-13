@@ -7,7 +7,10 @@ using Interpolations
 using Base.Iterators
 using DataFrames
 using PhysicsTools
+using Base.Iterators
+using Optim
 import Base: @kwdef
+
 
 using ..SPETemplates
 
@@ -48,9 +51,9 @@ abstract type PulseTemplate end
 """
 Abstract type for pulse templates that use a PDF to define the pulse shape
 """
-@kwdef struct PDFPulseTemplate{U<:UnivariateDistribution} <: PulseTemplate
+@kwdef struct PDFPulseTemplate{U<:UnivariateDistribution,A} <: PulseTemplate
     dist::U
-    amplitude::Float64
+    amplitude::A
 end
 
 get_template_mode(::PulseTemplate) = error("Not implemented")
@@ -60,11 +63,15 @@ get_template_mode(p::PDFPulseTemplate{<:Distributions.Truncated}) = mode(p.dist.
 """
 Pulse template using an interpolation to define its shape
 """
-@kwdef struct InterpolatedPulse <: PulseTemplate
+@kwdef struct InterpolatedPulse{A} <: PulseTemplate
     interp
-    amplitude::Float64
+    amplitude::A
 end
 
+function get_template_mode(p::InterpolatedPulse)
+    _func(x) = -evaluate_pulse_template(p, 0.0, x)
+    return Optim.minimizer(optimize(_func, -50.0, 50.0))
+end
 
 """
     evaluate_pulse_template(pulse_shape::PulseTemplate, pulse_time::T, timestamp::T)
@@ -83,7 +90,9 @@ function evaluate_pulse_template(
 
     shifted_time = timestamp - pulse_time
 
-    return pdf(pulse_shape.dist, shifted_time) * pulse_shape.amplitude
+    val_at_mode = pdf(pulse_shape.dist, mode(pulse_shape.dist.untruncated))
+
+    return pdf(pulse_shape.dist, shifted_time) * pulse_shape.amplitude / val_at_mode
 end
 
 
@@ -154,7 +163,15 @@ function PulseSeries(df::AbstractDataFrame, spe_template::SPEDistribution, pulse
     PulseSeries(df[:, :time], spe_template, pulse_shape)
 end
 
+function Base.iterate(ps::PulseSeries)
+    it = zip(ps.times, ps.charges)
+    return iterate(it)
+end
 
+function Base.iterate(ps::PulseSeries, state)
+    it = zip(ps.times, ps.charges)
+    return iterate(it, state)
+end
 
 
 Base.length(ps::PulseSeries) = length(ps.times)
