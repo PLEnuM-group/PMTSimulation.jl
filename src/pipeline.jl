@@ -20,7 +20,6 @@ using ..Waveforms
 
 
 
-export resample_simulation
 export STD_PMT_CONFIG, PMTConfig
 export make_reco_pulses
 export calc_gamma_shape_mean_fwhm
@@ -49,17 +48,18 @@ struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate
     unf_pulse_res::T # ns
     adc_freq::T # Ghz
     adc_bits::Int64
-    adc_dyn_range::Tuple{T, T}
+    adc_dyn_range::Tuple{T,T}
     tt_dist::V
     lp_filter::ZeroPoleGain{:z,ComplexF64,ComplexF64,Float64}
 
 end
 
-function PMTConfig(;st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, adc_bits::Int, adc_dyn_range::Tuple, lp_cutoff::Real,
+function PMTConfig(; st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, adc_bits::Int, adc_dyn_range::Tuple, lp_cutoff::Real,
     tt_mean::Real, tt_fwhm::Real)
     mode = get_template_mode(pm)
 
     eval_at_mode = evaluate_pulse_template(pm, 0, mode)
+    
 
     designmethod = Butterworth(1)
     lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
@@ -86,43 +86,11 @@ STD_PMT_CONFIG = PMTConfig(
     unf_pulse_res=0.1,
     adc_freq=0.25,
     adc_bits=12,
-    adc_dyn_range=(0., 20.),
+    adc_dyn_range=(0.0, 20.0),
     lp_cutoff=0.125,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
-
-function resample_simulation(hit_times, total_weights, downsample=1.0)
-    wsum = sum(total_weights)
-
-    mask = total_weights .> 0
-    hit_times = hit_times[mask]
-    total_weights = total_weights[mask]
-
-    norm_weights = ProbabilityWeights(copy(total_weights), wsum)
-    nhits = min(pois_rand(wsum * downsample), length(hit_times))
-    try
-        sample(hit_times, norm_weights, nhits; replace=false)
-    catch e
-        @show length(hit_times)
-        error("error")
-    end
-end
-
-
-function resample_simulation(df::AbstractDataFrame; downsample=1.0, per_pmt=true, time_col=:time)
-
-
-    wrapped(hit_times, total_weights) = resample_simulation(hit_times, total_weights, downsample)
-
-    if per_pmt
-        groups = groupby(df, [:pmt_id, :module_id])
-    else
-        groups = groupby(df, :module_id)
-    end
-    resampled_hits = combine(groups, [time_col, :total_weight] => wrapped => time_col)
-    return resampled_hits
-end
 
 
 
