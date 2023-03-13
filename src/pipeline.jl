@@ -20,7 +20,6 @@ using ..Waveforms
 
 
 
-export resample_simulation
 export STD_PMT_CONFIG, PMTConfig
 export make_reco_pulses
 export calc_gamma_shape_mean_fwhm
@@ -40,7 +39,7 @@ function calc_gamma_shape_mean_fwhm(mean, target_fwhm)
 end
 
 
-@kwdef struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate,V<:UnivariateDistribution}
+struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate,V<:UnivariateDistribution}
     spe_template::S
     pulse_model::P
     pulse_model_filt::U
@@ -48,16 +47,19 @@ end
     sampling_freq::T # Ghz
     unf_pulse_res::T # ns
     adc_freq::T # Ghz
+    adc_bits::Int64
+    adc_dyn_range::Tuple{T,T}
     tt_dist::V
     lp_filter::ZeroPoleGain{:z,ComplexF64,ComplexF64,Float64}
 
 end
 
-function PMTConfig(st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, lp_cutoff::Real,
+function PMTConfig(; st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, adc_bits::Int, adc_dyn_range::Tuple, lp_cutoff::Real,
     tt_mean::Real, tt_fwhm::Real)
     mode = get_template_mode(pm)
 
     eval_at_mode = evaluate_pulse_template(pm, 0, mode)
+    
 
     designmethod = Butterworth(1)
     lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
@@ -69,56 +71,26 @@ function PMTConfig(st::SPEDistribution, pm::PulseTemplate, snr_db::Real, samplin
 
     noise_sigma = eval_at_mode / 10^(snr_db / 20)
 
-    PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, tt_dist, lp_filter)
+    PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, adc_bits, adc_dyn_range, tt_dist, lp_filter)
 end
 
 
 STD_PMT_CONFIG = PMTConfig(
-    ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
-    PDFPulseTemplate(
+    st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
+    pm=PDFPulseTemplate(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
     ),
-    20,
-    2.0,
-    0.1,
-    0.25,
-    0.125,
-    25, # TT mean
-    1.5 # TT FWHM
+    snr_db=20,
+    sampling_freq=2.0,
+    unf_pulse_res=0.1,
+    adc_freq=0.25,
+    adc_bits=12,
+    adc_dyn_range=(0.0, 20.0),
+    lp_cutoff=0.125,
+    tt_mean=25, # TT mean
+    tt_fwhm=1.5 # TT FWHM
 )
-
-function resample_simulation(hit_times, total_weights, downsample=1.0)
-    wsum = sum(total_weights)
-
-    mask = total_weights .> 0
-    hit_times = hit_times[mask]
-    total_weights = total_weights[mask]
-
-    norm_weights = ProbabilityWeights(copy(total_weights), wsum)
-    nhits = min(pois_rand(wsum * downsample), length(hit_times))
-    try
-        sample(hit_times, norm_weights, nhits; replace=false)
-    catch e
-        @show length(hit_times)
-        error("error")
-    end
-end
-
-
-function resample_simulation(df::AbstractDataFrame; downsample=1.0, per_pmt=true, time_col=:time)
-
-
-    wrapped(hit_times, total_weights) = resample_simulation(hit_times, total_weights, downsample)
-
-    if per_pmt
-        groups = groupby(df, [:pmt_id, :module_id])
-    else
-        groups = groupby(df, :module_id)
-    end
-    resampled_hits = combine(groups, [time_col, :total_weight] => wrapped => time_col)
-    return resampled_hits
-end
 
 
 
