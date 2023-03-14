@@ -147,7 +147,7 @@ function digitize_waveform(
     yrange=(0, 100),
     yres_bits=12
 )
-    wf = make_waveform(ps, sampling_frequency, noise_amp; time_range=time_range)
+    wf = Waveform(ps, sampling_frequency, noise_amp; time_range=time_range)
     digitize_waveform(wf, sampling_frequency, digitizer_frequency, filter; yrange=yrange, yres_bits=yres_bits)
 end
 
