@@ -10,42 +10,23 @@ using PhysicsTools
 using Base.Iterators
 using Optim
 import Base: @kwdef
-
-
+import ..PMTConfig
 using ..SPETemplates
 
 
 export PulseTemplate, PDFPulseTemplate, GumbelPulse, InterpolatedPulse
 export make_pulse_dist, evaluate_pulse_template, make_filtered_pulse
 export PulseSeries, evaluate_pulse_series
-export gumbel_width_from_fwhm
 export get_template_mode
+export get_total_charge
 
 
-"""
-    fit_gumbel_fwhm_width()
-
-Fit a polynomial to the relationship between Gumbel width and FWHM
-"""
-function fit_gumbel_fwhm_width()
-    # find relationship between Gumbel width and FWHM
-
-
-    widths = 0.5:0.01:5
-
-    # Fit the function width = a * fwhm + b
-    poly = Polynomials.fit(map(w -> fwhm(Gumbel(0, w), w), widths), widths, 1)
-    poly
-end
-
-gumbel_width_from_fwhm = fit_gumbel_fwhm_width()
 
 
 """
 Abstract type for pulse templates
 """
 abstract type PulseTemplate end
-
 
 
 """
@@ -156,11 +137,15 @@ end
 function PulseSeries(times::AbstractVector{<:Real}, spe_template::SPEDistribution, pulse_shape::PulseTemplate)
     spe_d = make_spe_dist(spe_template)
     charges = rand(spe_d, length(times))
-    PulseSeries(times, charges, pulse_shape)
+    return PulseSeries(times, charges, pulse_shape)
 end
 
 function PulseSeries(df::AbstractDataFrame, spe_template::SPEDistribution, pulse_shape::PulseTemplate)
-    PulseSeries(df[:, :time], spe_template, pulse_shape)
+    return PulseSeries(df[:, :time], spe_template, pulse_shape)
+end
+
+function PulseSeries(times, pmt_config::PMTConfig)
+    return PulseSeries(times, pmt_config.spe_template, pmt_config.pulse_model)
 end
 
 function Base.iterate(ps::PulseSeries)
@@ -173,8 +158,9 @@ function Base.iterate(ps::PulseSeries, state)
     return iterate(it, state)
 end
 
-
 Base.length(ps::PulseSeries) = length(ps.times)
+
+get_total_charge(ps::PulseSeries) = length(ps) > 0 ? sum(p[2] for p in ps) : 0
 
 function Base.:+(a::PulseSeries, b::PulseSeries)
     # Could instead parametrize PulseSeries by PulseShape

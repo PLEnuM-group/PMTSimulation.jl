@@ -2,7 +2,7 @@
 
 julia_version = "1.9.0-rc1"
 manifest_format = "2.0"
-project_hash = "afdf7e54915c65ecf1a9f8a046bec89005c5e700"
+project_hash = "277acd40c76da226c7eb5221971b5efa97cc2862"
 
 [[deps.AbstractFFTs]]
 deps = ["ChainRulesCore", "LinearAlgebra"]
@@ -926,10 +926,10 @@ uuid = "5ad8b20f-a522-5ce9-bfc9-ddf1d5bda6ab"
 version = "0.2.3"
 
 [[deps.PhysicsTools]]
-deps = ["DataStructures", "Distributions", "FastGaussQuadrature", "LinearAlgebra", "Reexport", "Roots", "StaticArrays"]
-git-tree-sha1 = "2b935554275692400ce1a151ea0f30a65ada0d20"
+deps = ["DataStructures", "Distributions", "FastGaussQuadrature", "LinearAlgebra", "Polynomials", "Reexport", "Roots", "StaticArrays"]
+git-tree-sha1 = "2e323226b01ed5c7738e7ebd10a6b221fdf3e178"
 uuid = "aacfb283-0df6-49c4-85a4-270b72c3b0a9"
-version = "0.2.0"
+version = "0.2.1"
 
 [[deps.Pipe]]
 git-tree-sha1 = "6842804e7867b115ca9de748a0cf6b364523c16d"

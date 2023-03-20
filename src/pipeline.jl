@@ -18,12 +18,10 @@ using Optim
 using ..SPETemplates
 using ..PulseTemplates
 using ..Waveforms
+import ..PMTConfig
 
 
-
-export STD_PMT_CONFIG, PMTConfig
 export make_reco_pulses
-export calc_gamma_shape_mean_fwhm
 export apply_tt, apply_tt!, subtract_mean_tt, subtract_mean_tt!
 export plot_hits, plot_pmt_map, map_f_over_pmts
 export find_noise_scale
@@ -42,88 +40,6 @@ function find_noise_scale(target_adc_noise, adc_range, adc_bits)
     return first(Optim.minimizer(res))
 end
 
-
-function calc_gamma_shape_mean_fwhm(mean, target_fwhm)
-    function _optim(theta)
-        alpha = mean / theta
-        tt_dist = Gamma(alpha, theta)
-        fwhm(tt_dist, mode(tt_dist); xlims=(0, 100)) - target_fwhm
-    end
-
-    find_zero(_optim, [0.1 * target_fwhm^2 / mean, 10 * target_fwhm^2 / mean], A42())
-end
-
-
-struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate,V<:UnivariateDistribution}
-    spe_template::S
-    pulse_model::P
-    pulse_model_filt::U
-    noise_amp::T
-    sampling_freq::T # Ghz
-    unf_pulse_res::T # ns
-    adc_freq::T # Ghz
-    adc_bits::Int64
-    adc_dyn_range::Tuple{T,T}
-    tt_dist::V
-    lp_filter::ZeroPoleGain{:z,ComplexF64,ComplexF64,Float64}
-
-end
-
-function PMTConfig(;
-    st::SPEDistribution,
-    pm::PulseTemplate,
-    snr_db=nothing,
-    noise_sigma=nothing,
-    sampling_freq::Real,
-    unf_pulse_res::Real,
-    adc_freq::Real,
-    adc_bits::Int,
-    adc_dyn_range::Tuple,
-    lp_cutoff::Real,
-    tt_mean::Real,
-    tt_fwhm::Real)
-
-    if isnothing(snr_db) && isnothing(noise_sigma)
-        error("Have to set at least `snr_db` or `noise_sigma`")
-    end
-
-    if isnothing(noise_sigma)
-        mode = get_template_mode(pm)
-        eval_at_mode = evaluate_pulse_template(pm, 0, mode)
-        noise_sigma = eval_at_mode / 10^(snr_db / 20)
-    end
-
-
-    designmethod = Butterworth(1)
-    lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
-    filtered_pulse = make_filtered_pulse(pm, sampling_freq, (-10.0, 50.0), lp_filter)
-
-    tt_theta = calc_gamma_shape_mean_fwhm(tt_mean, tt_fwhm)
-    tt_alpha = tt_mean / tt_theta
-    tt_dist = Gamma(tt_alpha, tt_theta)
-
-
-
-    PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, adc_bits, adc_dyn_range, tt_dist, lp_filter)
-end
-
-
-STD_PMT_CONFIG = PMTConfig(
-    st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
-    pm=PDFPulseTemplate(
-        dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
-        amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
-    ),
-    snr_db=30,
-    sampling_freq=2.0,
-    unf_pulse_res=0.1,
-    adc_freq=0.208,
-    adc_bits=12,
-    adc_dyn_range=(0.0, 1000.0),
-    lp_cutoff=0.125,
-    tt_mean=25, # TT mean
-    tt_fwhm=1.5 # TT FWHM
-)
 
 
 
@@ -151,22 +67,17 @@ function subtract_mean_tt!(df::AbstractDataFrame, tt_dist::UnivariateDistributio
     return df
 end
 
-
-
-function make_reco_pulses(results::AbstractDataFrame, pmt_config::PMTConfig=STD_PMT_CONFIG)
+function make_reco_pulses(results::AbstractDataFrame, pmt_config::PMTConfig, time_range)
     @pipe results |>
-          resample_simulation |>
           apply_tt!(_, pmt_config.tt_dist) |>
           subtract_mean_tt!(_, pmt_config.tt_dist) |>
-          PulseSeries(_, pmt_config.spe_template, pmt_config.pulse_model) |>
+          PulseSeries(_, pmt_config) |>
           digitize_waveform(
               _,
-              pmt_config.sampling_freq,
-              pmt_config.adc_freq,
-              pmt_config.noise_amp,
-              pmt_config.lp_filter
+              pmt_config,
+              time_range=time_range
           ) |>
-          unfold_waveform(_, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.2, :fnnls)
+          unfold_waveform(_, pmt_config, alg=:nnls)
 end
 
 function plot_hits(target, groups...; ylabel="", title="")

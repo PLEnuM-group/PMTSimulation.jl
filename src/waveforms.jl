@@ -7,6 +7,7 @@ using DSP
 export Waveform
 export add_gaussian_white_noise, digitize_waveform, unfold_waveform, plot_waveform
 export adc_bins, digitize
+import ..PMTConfig
 
 """
 Waveform struct. Stores time stamps and corresponding values.
@@ -76,6 +77,11 @@ function Waveform(
     Waveform(timestamps, waveform_values_noise)
 end
 
+function Waveform(ps, pmt_config::PMTConfig; time_range=(-50.0, 150.0))
+    return Waveform(ps, pmt_config.sampling_freq, pmt_config.noise_amp, time_range=time_range)
+end
+
+
 """
     adc_bins(yrange, bits)
 Calculate ADC bins when using `bits` bits in `yrange`.
@@ -126,9 +132,9 @@ function digitize_waveform(
     waveform::Waveform,
     sampling_frequency::Real,
     digitizer_frequency::Real,
-    filter;
-    yrange=(0, 100),
-    yres_bits=12
+    filter,
+    yrange::NTuple{2},
+    yres_bits::Integer;
 )
 
     if length(waveform) == 0
@@ -139,17 +145,19 @@ function digitize_waveform(
     waveform_filtered = filt(filter, waveform.values)
 
     resampling_rate = digitizer_frequency / sampling_frequency
-    new_interval = range(min_time, max_time, step=1 / digitizer_frequency)
     waveform_resampled = resample(waveform_filtered, resampling_rate)
-
     bins = adc_bins(yrange, yres_bits)
-
     bin_ixs = digitize.(waveform_resampled, Ref(bins))
-
     waveform_discretized = bins[bin_ixs]
     #waveform_discretized = bin_ix
 
+    new_interval = range(min_time, max_time, length=length(waveform_discretized))
     return Waveform(collect(new_interval), waveform_discretized)
+end
+
+function digitize_waveform(waveform::Waveform, pmt_config::PMTConfig)
+    return digitize_waveform(waveform, pmt_config.sampling_freq, pmt_config.adc_freq,
+    pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits)
 end
 
 function digitize_waveform(
@@ -157,13 +165,20 @@ function digitize_waveform(
     sampling_frequency::Real,
     digitizer_frequency::Real,
     noise_amp::Real,
-    filter; time_range=(-50.0, 150.0),
-    yrange=(0, 100),
-    yres_bits=12
+    filter,
+    yrange::NTuple{2},
+    yres_bits::Integer;
+    time_range=(-50.0, 150.0),
 )
     wf = Waveform(ps, sampling_frequency, noise_amp; time_range=time_range)
-    digitize_waveform(wf, sampling_frequency, digitizer_frequency, filter; yrange=yrange, yres_bits=yres_bits)
+    digitize_waveform(wf, sampling_frequency, digitizer_frequency, filter, yrange, yres_bits)
 end
+
+function digitize_waveform(ps::PulseSeries, pmt_config::PMTConfig; time_range)
+    return digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp,
+        pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits; time_range=time_range)
+end
+
 
 
 function make_nnls_matrix(
@@ -242,10 +257,10 @@ PulseSeries with unfolded pulses
 function unfold_waveform(
     digi_wf::Waveform,
     pulse_model::PulseTemplate,
-    pulse_resolution::Real,
-    min_charge::Real,
-    alg::Symbol=:nnls;
-    min_boundary_dist=3
+    pulse_resolution::Real;
+    alg::Symbol=:nnls,
+    min_boundary_dist=3,
+    min_charge::Real=0.2
 )
     #offset = get_template_mode(pulse_model)
 
@@ -273,6 +288,11 @@ function unfold_waveform(
     return PulseSeries(pulse_times[mask], pulse_charges[mask], pulse_model)
 
 end
+
+function unfold_waveform(digi_wf::Waveform, pmt_config::PMTConfig; min_charge=0.2, min_boundary_dist=3., alg=:nnls)
+    return unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, alg=alg, min_charge=min_charge, min_boundary_dist=min_boundary_dist, )
+end
+
 
 function plot_waveform(
     orig_waveform::Waveform,
