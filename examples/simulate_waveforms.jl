@@ -59,15 +59,11 @@ begin
         time_range=(-50.0, 300.0))
     digi_wf = digitize_waveform(
         waveform,
-        pmt_config.sampling_freq,
-        pmt_config.adc_freq,
-        pmt_config.lp_filter,
-        yrange=pmt_config.adc_dyn_range,
-        yres_bits=pmt_config.adc_bits)
+       pmt_config)
 
     fig, ax = lines(waveform.timestamps, waveform.values, axis=(; xlabel="Time (ns)", ylabel="Amplitude (mV)"), label="Raw Waveform")
 
-    unfolded_sig = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
+    unfolded_sig = unfold_waveform(digi_wf, pmt_config, alg=:nnls)
 
     reco = PulseSeries(unfolded_sig.times, unfolded_sig.charges, pmt_config.pulse_model)
     @show reco
