@@ -18,29 +18,132 @@ using Interpolations
 
 ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
 
-snr_db = 10 * log10(7^2 / 0.5^2)
+#snr_db = 10 * log10(7^2 / 0.5^2)
 
-fwhm = 6.0
-gumbel_scale = gumbel_width_from_fwhm(6)
-gumbel_loc = 10
+snr_db = 10 * log10(7^2 / 0.1^2)
+
+#fwhm = 6.0
+fwhm = 30
+gumbel_scale = gumbel_width_from_fwhm(fwhm)
+gumbel_loc = 30
+
+
+adc_range = (0.0, 1000.0)
+adc_bits = 12
+
+noise_amp = find_noise_scale(0.6, adc_range, adc_bits)
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
     pm=PDFPulseTemplate(
-        dist=Truncated(Gumbel(0, gumbel_scale) + gumbel_loc, 0, 30),
+        dist=Truncated(Gumbel(0, gumbel_scale) + gumbel_loc, 0, 100),
         amplitude=7.0 # mV
     ),
-    snr_db=22.92,
+    snr_db=snr_db,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
-    adc_freq=0.2,
+    adc_freq=0.05,
     adc_bits=12,
     adc_dyn_range=(0.0, 1000.0), #mV
-    lp_cutoff=0.125,
+    lp_cutoff=0.025,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
 spe_d = make_spe_dist(pmt_config.spe_template)
+
+
+
+begin
+    pulse_series = PulseSeries([0, 10], [1, 1], pmt_config.pulse_model)
+    waveform = Waveform(pulse_series, pmt_config.sampling_freq, pmt_config.noise_amp,
+        time_range=(-50.0, 300.0))
+    digi_wf = digitize_waveform(
+        waveform,
+        pmt_config.sampling_freq,
+        pmt_config.adc_freq,
+        pmt_config.lp_filter,
+        yrange=pmt_config.adc_dyn_range,
+        yres_bits=pmt_config.adc_bits)
+
+    fig, ax = lines(waveform.timestamps, waveform.values, axis=(; xlabel="Time (ns)", ylabel="Amplitude (mV)"), label="Raw Waveform")
+
+    unfolded_sig = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
+
+    reco = PulseSeries(unfolded_sig.times, unfolded_sig.charges, pmt_config.pulse_model)
+    @show reco
+    xs = -50:0.1:400
+    reco_eval = evaluate_pulse_series(xs, reco)
+    #=
+    ax2 = Axis(
+        fig[1, 1],
+        yaxisposition=:right,
+        ylabel="ADC Counts"
+    )
+    hidexdecorations!(ax2)
+    hidespines!(ax2)
+    linkxaxes!(ax, ax2)
+    =#
+
+    lines!(ax, digi_wf.timestamps, digi_wf.values, label="Digitized Waveform",
+        color=:black)
+    lines!(ax, xs, reco_eval, label="Unfolded Waveform")
+    bins = adc_bins(pmt_config.adc_dyn_range, pmt_config.adc_bits)
+
+    #hlines!(ax, bins[1:10], alpha=0.1)
+    fig
+end
+
+
+
+begin
+    time_sep_per_GeV = (50 / 0.3) / 1E6
+    tau_log_e = 3:0.05:5
+    time_sep = time_sep_per_GeV .* 10 .^ tau_log_e
+    pulse_times = rand(Uniform(0, 10), 200)
+
+    rdt = []
+    rdc = []
+    sucess = []
+    results = []
+    for tle in tau_log_e
+        time_sep = 10^tle * time_sep_per_GeV
+        for t in pulse_times
+            c = rand(spe_d)
+            ps = PulseSeries([t, t + time_sep], rand(spe_d, 2), pmt_config.pulse_model)
+            digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, time_range=[-50, 150])
+            unfolded_sig = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
+
+            ps = PulseSeries([t, t], rand(spe_d, 2), pmt_config.pulse_model)
+            digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, time_range=[-50, 150])
+            unfolded_bg = unfold_waveform(digi_wf, pmt_config.pulse_model_filt, pmt_config.unf_pulse_res, 0.3, :nnls)
+
+            push!(results, (np_sig=length(unfolded_sig), np_bg=length(unfolded_bg), tle=tle, time_sep=time_sep))
+        end
+    end
+
+    results = DataFrame(results)
+    results_mean = combine(groupby(results, :tle), [:np_sig, :np_bg] .=> mean, :time_sep => first)
+
+    fig = Figure()
+    ax = Axis(fig[1, 1], xlabel="Log10(Energy)", ylabel="Mean number of reco pulses",
+        xscale=log10)
+
+    lines!(ax, 10 .^ results_mean[:, :tle], results_mean[:, :np_sig_mean], label="Signal")
+    lines!(ax, 10 .^ results_mean[:, :tle], results_mean[:, :np_bg_mean], label="BG (2PE single)")
+    axislegend(ax, position=:lt)
+
+    ax2 = Axis(
+        fig[1, 1],
+        limits=(minimum(results_mean[:, :time_sep_first]), maximum(results_mean[:, :time_sep_first]), 0, 1),
+        xaxisposition=:top,
+        xlabel="Time Separation (ns)",
+        xscale=log10)
+    hidespines!(ax2)
+    hideydecorations!(ax2)
+    xlims!(ax, 10^tau_log_e[1], 10^tau_log_e[end])
+
+    fig
+end
 
 
 pulse_charges = [0.1, 0.2, 0.3, 0.5, 1, 5, 10, 50, 100]

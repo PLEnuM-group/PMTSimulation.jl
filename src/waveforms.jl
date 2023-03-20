@@ -6,20 +6,20 @@ using CairoMakie
 using DSP
 export Waveform
 export add_gaussian_white_noise, digitize_waveform, unfold_waveform, plot_waveform
-export adc_bins
+export adc_bins, digitize
 
 """
 Waveform struct. Stores time stamps and corresponding values.
 """
-struct Waveform{T<:Real,U<:AbstractVector{T},V<:AbstractVector{T}}
+struct Waveform{U<:AbstractVector{<:Real},V<:AbstractVector{<:Real}}
     timestamps::U
     values::V
 
-    function Waveform(timestamps::U, values::V) where {T<:Real,U<:AbstractVector{T},V<:AbstractVector{T}}
+    function Waveform(timestamps::U, values::V) where {U<:AbstractVector{<:Real},V<:AbstractVector{<:Real}}
         if length(timestamps) != length(values)
             error("Timestamps and values have to have same length.")
         end
-        new{T,U,V}(timestamps, values)
+        new{U,V}(timestamps, values)
     end
 end
 
@@ -85,6 +85,21 @@ function adc_bins(yrange, bits)
     return adc_bins = LinRange(yrange[1], yrange[2], n_bins)
 end
 
+"""
+    digitize(x, bins)
+
+Return `i`, where `i` fulfills
+\$ bin_ix[i] > x >= bin_ix[i+1] \$
+"""
+function digitize(x, bins)
+    # Discretize
+    # TODO check if there are 2^yres_bits or 2^yres_bits -1 bins
+    n_bins = length(bins)
+    bin_ix = searchsortedfirst(bins, x) - 1
+    bin_ix = clamp(bin_ix, 1, n_bins)
+
+    return bin_ix
+end
 
 """
     digitize_waveform(
@@ -127,13 +142,12 @@ function digitize_waveform(
     new_interval = range(min_time, max_time, step=1 / digitizer_frequency)
     waveform_resampled = resample(waveform_filtered, resampling_rate)
 
-    # Discretize
-    # TODO check if there are 2^yres_bits or 2^yres_bits -1 bins
-    n_bins = 2^yres_bits
-    adc_bins = LinRange(yrange[1], yrange[2], n_bins)
-    bin_ix = searchsortedfirst.(Ref(adc_bins), waveform_resampled)
-    bin_ix[bin_ix.>n_bins] .= n_bins
-    waveform_discretized = adc_bins[bin_ix]
+    bins = adc_bins(yrange, yres_bits)
+
+    bin_ixs = digitize.(waveform_resampled, Ref(bins))
+
+    waveform_discretized = bins[bin_ixs]
+    #waveform_discretized = bin_ix
 
     return Waveform(collect(new_interval), waveform_discretized)
 end
@@ -153,11 +167,12 @@ end
 
 
 function make_nnls_matrix(
-    pulse_times::V,
+    pulse_times::AbstractVector,
     pulse_shape::PulseTemplate,
-    timestamps::V) where {T<:Real,V<:AbstractVector{T}}
+    timestamps::AbstractVector)
 
-    nnls_matrix = zeros(T, size(timestamps, 1), size(pulse_times, 1))
+
+    nnls_matrix = zeros(eltype(timestamps), size(timestamps, 1), size(pulse_times, 1))
 
     # dt = 1/sampling_frequency # ns
     # timestamps_hires = range(eval_range[1], eval_range[2], step=dt)
@@ -174,10 +189,10 @@ end
 
 
 function apply_nnls(
-    pulse_times::V,
+    pulse_times::AbstractVector,
     pulse_shape::PulseTemplate,
-    digi_wf::Waveform{T,V};
-    alg::Symbol=:nnls) where {T<:Real,V<:AbstractVector{T}}
+    digi_wf::Waveform;
+    alg::Symbol=:nnls)
 
 
     # append zeros at waveform edges

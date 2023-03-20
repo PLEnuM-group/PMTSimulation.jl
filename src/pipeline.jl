@@ -13,6 +13,7 @@ using Random
 using Interpolations
 using Roots
 using PhysicsTools
+using Optim
 
 using ..SPETemplates
 using ..PulseTemplates
@@ -25,7 +26,21 @@ export make_reco_pulses
 export calc_gamma_shape_mean_fwhm
 export apply_tt, apply_tt!, subtract_mean_tt, subtract_mean_tt!
 export plot_hits, plot_pmt_map, map_f_over_pmts
+export find_noise_scale
 
+
+function find_noise_scale(target_adc_noise, adc_range, adc_bits)
+    x = randn(10000)
+    function _optim(sigma)
+
+        adc_noise = std(digitize.(x .* sigma, Ref(adc_bins(adc_range, adc_bits))))
+
+        return mean((adc_noise - target_adc_noise) .^ 2)
+    end
+
+    res = optimize(_optim, [1.0])
+    return first(Optim.minimizer(res))
+end
 
 
 function calc_gamma_shape_mean_fwhm(mean, target_fwhm)
@@ -54,12 +69,30 @@ struct PMTConfig{T<:Real,S<:SPEDistribution{T},P<:PulseTemplate,U<:PulseTemplate
 
 end
 
-function PMTConfig(; st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampling_freq::Real, unf_pulse_res::Real, adc_freq::Real, adc_bits::Int, adc_dyn_range::Tuple, lp_cutoff::Real,
-    tt_mean::Real, tt_fwhm::Real)
-    mode = get_template_mode(pm)
+function PMTConfig(;
+    st::SPEDistribution,
+    pm::PulseTemplate,
+    snr_db=nothing,
+    noise_sigma=nothing,
+    sampling_freq::Real,
+    unf_pulse_res::Real,
+    adc_freq::Real,
+    adc_bits::Int,
+    adc_dyn_range::Tuple,
+    lp_cutoff::Real,
+    tt_mean::Real,
+    tt_fwhm::Real)
 
-    eval_at_mode = evaluate_pulse_template(pm, 0, mode)
-    
+    if isnothing(snr_db) && isnothing(noise_sigma)
+        error("Have to set at least `snr_db` or `noise_sigma`")
+    end
+
+    if isnothing(noise_sigma)
+        mode = get_template_mode(pm)
+        eval_at_mode = evaluate_pulse_template(pm, 0, mode)
+        noise_sigma = eval_at_mode / 10^(snr_db / 20)
+    end
+
 
     designmethod = Butterworth(1)
     lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
@@ -69,7 +102,7 @@ function PMTConfig(; st::SPEDistribution, pm::PulseTemplate, snr_db::Real, sampl
     tt_alpha = tt_mean / tt_theta
     tt_dist = Gamma(tt_alpha, tt_theta)
 
-    noise_sigma = eval_at_mode / 10^(snr_db / 20)
+
 
     PMTConfig(st, pm, filtered_pulse, noise_sigma, sampling_freq, unf_pulse_res, adc_freq, adc_bits, adc_dyn_range, tt_dist, lp_filter)
 end
@@ -81,12 +114,12 @@ STD_PMT_CONFIG = PMTConfig(
         dist=truncated(Gumbel(0, gumbel_width_from_fwhm(5.0)) + 4, 0, 20),
         amplitude=1.0 #ustrip(u"A", 5E6 * ElementaryCharge / 20u"ns")
     ),
-    snr_db=20,
+    snr_db=30,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
-    adc_freq=0.25,
+    adc_freq=0.208,
     adc_bits=12,
-    adc_dyn_range=(0.0, 20.0),
+    adc_dyn_range=(0.0, 1000.0),
     lp_cutoff=0.125,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
