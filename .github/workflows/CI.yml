@@ -27,10 +27,6 @@ jobs:
           - x86
     steps:
       - uses: actions/checkout@v2
-      - uses: julia-actions/add-julia-registry@v1
-        with:
-          registry: PLEnuM-group/julia-registry
-          key: ${{ secrets.SSH_KEY }}
       - uses: julia-actions/setup-julia@v1
         with:
           version: ${{ matrix.version }}
