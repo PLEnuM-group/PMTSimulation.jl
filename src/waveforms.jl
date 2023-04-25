@@ -101,7 +101,7 @@ function digitize(x, bins)
     # Discretize
     # TODO check if there are 2^yres_bits or 2^yres_bits -1 bins
     n_bins = length(bins)
-    bin_ix = searchsortedfirst(bins, x) - 1
+    bin_ix = searchsortedlast(bins, x) 
     bin_ix = clamp(bin_ix, 1, n_bins)
 
     return bin_ix
