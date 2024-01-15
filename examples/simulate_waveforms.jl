@@ -15,42 +15,76 @@ using Roots
 using Base.Iterators
 using Random
 using Interpolations
+using PhysicsTools
 
 ElementaryCharge * 5E6 / 5u"ns" * 50u"Ω" |> u"mV"
-
-#snr_db = 10 * log10(7^2 / 0.5^2)
-
-snr_db = 10 * log10(7^2 / 0.1^2)
-
-#fwhm = 6.0
-fwhm = 30
-gumbel_scale = gumbel_width_from_fwhm(fwhm)
-gumbel_loc = 30
-
+fwhm = 6.0
+gumbel_scale = gumbel_width_from_fwhm(6)
+gumbel_loc = 10
 
 adc_range = (0.0, 1000.0)
 adc_bits = 12
 
-noise_amp = find_noise_scale(0.6, adc_range, adc_bits)
+adc_noise_level = 0.6
+
+noise_amp = find_noise_scale(adc_noise_level, adc_range, adc_bits)
 
 pmt_config = PMTConfig(
     st=ExponTruncNormalSPE(expon_rate=1.0, norm_sigma=0.3, norm_mu=1.0, trunc_low=0.0, peak_to_valley=3.1),
     pm=PDFPulseTemplate(
-        dist=Truncated(Gumbel(0, gumbel_scale) + gumbel_loc, 0, 100),
+        dist=Truncated(Gumbel(0, gumbel_scale) + gumbel_loc, 0, 30),
         amplitude=7.0 # mV
     ),
-    snr_db=snr_db,
+    #snr_db=22.92,
+    noise_sigma=noise_amp,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
-    adc_freq=0.05,
+    adc_freq=0.208,
     adc_bits=12,
     adc_dyn_range=(0.0, 1000.0), #mV
-    lp_cutoff=0.025,
+    lp_cutoff=0.04,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
 spe_d = make_spe_dist(pmt_config.spe_template)
 
+times = -50:0.1:70
+lines(times, evaluate_pulse_template.(Ref(pmt_config.pulse_model_filt), 0., times))
+pmt_config.noise_amp
+
+begin
+    ps = PulseSeries([0.0], [100.0], pmt_config.pulse_model)
+    wf = Waveform(ps, pmt_config.sampling_freq, pmt_config.noise_amp)
+    digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits,
+        time_range=[-10, 50])
+    
+    #digi_wf = digitize_waveform(wf, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits)
+    
+    waveform_filtered = filt(pmt_config.lp_filter, wf.values)
+
+    min_time, max_time = extrema(wf.timestamps)
+    resampling_rate = pmt_config.adc_freq / pmt_config.sampling_freq
+    wf_resampled = resample(waveform_filtered, resampling_rate)
+    timesteps = range(min_time, max_time, length=length(wf_resampled))
+    waveform_resampled = Waveform(timesteps, wf_resampled)
+    
+    unfolded = unfold_waveform(digi_wf, pmt_config)
+    @show  unfolded.times, unfolded.charges
+    
+    reco = PulseSeries(unfolded.times, unfolded.charges, pmt_config.pulse_model)
+    
+    ts = -20:0.1:50
+    fig, ax = lines(ts, evaluate_pulse_series(ts, ps), label="Original Pulse",
+        axis=(; xlabel="Time (ns)", ylabel="Amplitude (mV)"))
+    lines!(ax, digi_wf.timestamps, digi_wf.values, label="Digitized Pulse")
+    lines!(ax, wf.timestamps, wf.values, label="Waveform Raw")
+    lines!(ax, waveform_resampled.timestamps, waveform_resampled.values, label="Resampled Pulse")
+    lines!(ax, ts, evaluate_pulse_series(ts, reco), label="Reconstructed Pulse")
+    
+    Legend(fig[1, 2], ax)
+    xlims!(-20, 70)
+fig
+end
 
 
 begin

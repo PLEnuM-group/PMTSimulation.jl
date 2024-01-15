@@ -112,7 +112,7 @@ end
         waveform::Waveform,
         sampling_frequency::Real,
         digitizer_frequency::Real,
-        filter;
+        filter,
         yrange=(0, 100),
         yres_bits=12
         )
