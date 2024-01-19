@@ -39,37 +39,72 @@ pmt_config = PMTConfig(
     noise_sigma=noise_amp,
     sampling_freq=2.0,
     unf_pulse_res=0.1,
-    adc_freq=0.208,
+    adc_freq=0.200,
     adc_bits=12,
     adc_dyn_range=(0.0, 1000.0), #mV
-    lp_cutoff=0.04,
+    lp_cutoff=0.1,
     tt_mean=25, # TT mean
     tt_fwhm=1.5 # TT FWHM
 )
 spe_d = make_spe_dist(pmt_config.spe_template)
 
-times = -50:0.1:70
-lines(times, evaluate_pulse_template.(Ref(pmt_config.pulse_model_filt), 0., times))
-pmt_config.noise_amp
+
+pes = [1, 5, 10, 15, 20, 50, 70, 80, 100]
+data = []
+for pe in pes
+    ptimes = []
+    for _ in 1:300
+        t0 = rand(Uniform(-5, 5))
+        ps = PulseSeries([t0], [pe], pmt_config.pulse_model)
+        wf = Waveform(ps, pmt_config.sampling_freq, pmt_config.noise_amp, time_range=(-100., 100.))
+        digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits,
+            time_range=[-100., 100])
+
+        max_val = maximum(wf.values)
+        tthresh = wf.timestamps[findfirst(wf.values .>= 0.5*max_val)]
+
+        unfolded = unfold_waveform(
+            digi_wf,
+            pmt_config.pulse_model_filt,
+            0.01,
+            alg=:nnls,
+            min_charge=0.2,
+            min_boundary_dist=3)
+        maxt = unfolded.times[argmax(unfolded.charges)]
+
+        reco = PulseSeries(unfolded.times, unfolded.charges, pmt_config.pulse_model)
+        refolded =  Waveform(reco, pmt_config.sampling_freq, pmt_config.noise_amp, time_range=(-100., 100.)) 
+
+        max_val_reco = maximum(refolded.values)
+        tthresh_reco = refolded.timestamps[findfirst(refolded.values .>= 0.5*max_val_reco)]
+        push!(ptimes, tthresh_reco-tthresh)
+    end
+    push!(data, (pe=pe, time_delta=ptimes))
+end
+
+data_df = DataFrame(data)
+
+
+
+lines(data_df[:, :pe], std.(data_df[:, :time_delta]))
+
+
+
 
 begin
-    ps = PulseSeries([0.0], [100.0], pmt_config.pulse_model)
-    wf = Waveform(ps, pmt_config.sampling_freq, pmt_config.noise_amp)
+    ps = PulseSeries([1.], [2], pmt_config.pulse_model)
+    wf = Waveform(ps, pmt_config.sampling_freq, pmt_config.noise_amp, time_range=(-100., 100.))
     digi_wf = digitize_waveform(ps, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.noise_amp, pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits,
-        time_range=[-10, 50])
+        time_range=[-100, 100])
     
     #digi_wf = digitize_waveform(wf, pmt_config.sampling_freq, pmt_config.adc_freq, pmt_config.lp_filter, pmt_config.adc_dyn_range, pmt_config.adc_bits)
     
     waveform_filtered = filt(pmt_config.lp_filter, wf.values)
 
     min_time, max_time = extrema(wf.timestamps)
-    resampling_rate = pmt_config.adc_freq / pmt_config.sampling_freq
-    wf_resampled = resample(waveform_filtered, resampling_rate)
-    timesteps = range(min_time, max_time, length=length(wf_resampled))
-    waveform_resampled = Waveform(timesteps, wf_resampled)
+
     
     unfolded = unfold_waveform(digi_wf, pmt_config)
-    @show  unfolded.times, unfolded.charges
     
     reco = PulseSeries(unfolded.times, unfolded.charges, pmt_config.pulse_model)
     
@@ -78,8 +113,7 @@ begin
         axis=(; xlabel="Time (ns)", ylabel="Amplitude (mV)"))
     lines!(ax, digi_wf.timestamps, digi_wf.values, label="Digitized Pulse")
     lines!(ax, wf.timestamps, wf.values, label="Waveform Raw")
-    lines!(ax, waveform_resampled.timestamps, waveform_resampled.values, label="Resampled Pulse")
-    lines!(ax, ts, evaluate_pulse_series(ts, reco), label="Reconstructed Pulse")
+       lines!(ax, ts, evaluate_pulse_series(ts, reco), label="Reconstructed Pulse")
     
     Legend(fig[1, 2], ax)
     xlims!(-20, 70)
