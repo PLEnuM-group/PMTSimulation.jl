@@ -46,9 +46,9 @@ function PMTConfig(;
     end
 
 
-    designmethod = Butterworth(1)
+    designmethod = Butterworth(3)
     lp_filter = digitalfilter(Lowpass(lp_cutoff, fs=sampling_freq), designmethod)
-    filtered_pulse = make_filtered_pulse(pm, sampling_freq, (-10.0, 50.0), lp_filter)
+    filtered_pulse = make_filtered_pulse(pm, sampling_freq, adc_freq, (-100.0, 100.0), lp_filter)
 
     tt_theta = calc_gamma_shape_mean_fwhm(tt_mean, tt_fwhm)
     tt_alpha = tt_mean / tt_theta

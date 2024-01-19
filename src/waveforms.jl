@@ -145,7 +145,10 @@ function digitize_waveform(
     waveform_filtered = filt(filter, waveform.values)
 
     resampling_rate = digitizer_frequency / sampling_frequency
-    waveform_resampled = resample(waveform_filtered, resampling_rate)
+
+    rs_filt =  resample_filter(resampling_rate, 32, 2, 30)
+
+    waveform_resampled = resample(waveform_filtered,resampling_rate,rs_filt)
     bins = adc_bins(yrange, yres_bits)
     bin_ixs = digitize.(waveform_resampled, Ref(bins))
     waveform_discretized = bins[bin_ixs]
@@ -194,11 +197,10 @@ function make_nnls_matrix(
 
 
     for i in eachindex(pulse_times)
-        nnls_matrix[:, i] = evaluate_pulse_template(
-            pulse_shape, pulse_times[i], timestamps)
+        evaluate_pulse_template!(pulse_shape, pulse_times[i], timestamps, @view nnls_matrix[:, i])
     end
 
-    nnls_matrix
+    return nnls_matrix
 
 end
 

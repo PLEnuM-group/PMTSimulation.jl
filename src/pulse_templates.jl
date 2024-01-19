@@ -15,7 +15,7 @@ using ..SPETemplates
 
 
 export PulseTemplate, PDFPulseTemplate, GumbelPulse, InterpolatedPulse
-export make_pulse_dist, evaluate_pulse_template, make_filtered_pulse
+export make_pulse_dist, evaluate_pulse_template, make_filtered_pulse, evaluate_pulse_template!
 export PulseSeries, evaluate_pulse_series
 export get_template_mode
 export get_total_charge
@@ -76,6 +76,14 @@ function evaluate_pulse_template(
     return pdf(pulse_shape.dist, shifted_time) * pulse_shape.amplitude / val_at_mode
 end
 
+function evaluate_pulse_template(
+    pulse_shape::PDFPulseTemplate,
+    pulse_time::Real,
+    timestamps::AbstractVector{<:Real})
+
+    return evaluate_pulse_template.(Ref(pulse_shape), Ref(pulse_time), timestamps)
+end
+
 
 function evaluate_pulse_template(
     pulse_shape::InterpolatedPulse,
@@ -88,11 +96,29 @@ end
 
 
 function evaluate_pulse_template(
-    pulse_shape::PulseTemplate,
+    pulse_shape::InterpolatedPulse,
     pulse_time::Real,
     timestamps::AbstractVector{<:Real})
-    return evaluate_pulse_template.(Ref(pulse_shape), Ref(pulse_time), timestamps)
+
+    shifted_time = timestamps .- pulse_time
+
+    return pulse_shape.interp(shifted_time) .* pulse_shape.amplitude
 end
+
+function evaluate_pulse_template!(
+    pulse_shape::PulseTemplate,
+    pulse_time::Real,
+    timestamps::AbstractVector{<:Real},
+    out_vec::AbstractVector)
+
+    if length(timestamps) != length(out_vec)
+        error("Output vector has to be same size as timestamps")
+    end
+
+    out_vec .= evaluate_pulse_template.(Ref(pulse_shape), Ref(pulse_time), timestamps)
+    return out_vec
+end
+
 
 
 
@@ -104,16 +130,32 @@ end
 """
 function make_filtered_pulse(
     orig_pulse::PulseTemplate,
-    sampling_freq::Real,
+    sampling_frequency::Real,
+    digitizer_frequency::Real,
     eval_range::Tuple{<:Real,<:Real},
     filter)
 
-    timesteps = range(eval_range[1], eval_range[2], step=1 / sampling_freq)
+    
+    timesteps = range(eval_range[1], eval_range[2], step=1 / sampling_frequency)
     orig_eval = evaluate_pulse_template(orig_pulse, 0.0, timesteps)
     filtered = filt(filter, orig_eval)
     interp_linear = linear_interpolation(timesteps, filtered, extrapolation_bc=0.0)
 
     return InterpolatedPulse(interp_linear, 1.0)
+    #=
+
+    timesteps = range(eval_range[1], eval_range[2], step=1 / sampling_frequency)
+    evaluated = evaluate_pulse_template(orig_pulse, 0.0, timesteps)
+    pulse_filtered = filt(filter, evaluated)
+    resampling_rate = digitizer_frequency / sampling_frequency
+    rs_filt =  resample_filter(resampling_rate, 32, 2, 30)
+    pulse_resampled = resample(pulse_filtered, resampling_rate, rs_filt)
+    timesteps_downsampled = range(eval_range[1], eval_range[2], length=length(pulse_resampled))
+    
+    interp_linear = linear_interpolation(timesteps_downsampled, pulse_resampled, extrapolation_bc=0.0)
+    
+    return InterpolatedPulse(interp_linear, 1.0)
+    =#
 end
 
 struct PulseSeries{T<:AbstractVector{<:Real},U<:PulseTemplate}
